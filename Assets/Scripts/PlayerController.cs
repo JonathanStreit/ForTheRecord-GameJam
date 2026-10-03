@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -8,6 +9,8 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(Rigidbody), typeof(PlayerInput))]
 public class PlayerController : MonoBehaviour
 {
+    public static readonly List<PlayerController> All = new List<PlayerController>();
+
     [Header("Movement")]
     [SerializeField] float moveSpeed = 6f;
     [SerializeField] float acceleration = 40f;
@@ -49,6 +52,17 @@ public class PlayerController : MonoBehaviour
         _move = input.actions[moveActionName];
         _grab = input.actions[grabActionName];
         _use = input.actions[useActionName];
+    }
+
+    void OnEnable() => All.Add(this);
+    void OnDisable() => All.Remove(this);
+
+    void Start()
+    {
+        // Players walk straight through player-only gates, the big camera does not.
+        foreach (var gate in PlayerOnlyGate.All)
+            foreach (var ownCollider in Colliders)
+                Physics.IgnoreCollision(gate.Collider, ownCollider);
     }
 
     void Update()

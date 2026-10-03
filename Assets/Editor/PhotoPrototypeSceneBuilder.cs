@@ -36,9 +36,16 @@ public static class PhotoPrototypeSceneBuilder
         BuildFlash(new Vector3(-5f, 0.3f, -9f));
         BuildRemote(new Vector3(5f, 0.15f, -9f), capture);
 
-        var statue = BuildStatue(new Vector3(-12f, 0f, 8f));
-        var orb = BuildOrb(new Vector3(12f, 0f, 8.5f));
-        var stroller = BuildStroller(new Vector3(-4f, 0f, 4.5f));
+        var statue = BuildStatue(new Vector3(-12f, 0f, 8f), 100);
+        var orb = BuildOrb(new Vector3(12f, 0f, 8.5f), 100);
+        var stroller = BuildStroller(new Vector3(-6f, 0f, -0.5f), new Vector3(12f, 0f, 0f), 300);
+
+        // Game camera follows the players and keeps the big camera in view.
+        var coopCamera = Camera.main.gameObject.AddComponent<CoopCamera>();
+        var cameraSo = new SerializedObject(coopCamera);
+        cameraSo.FindProperty("defaultFocus").vector3Value = new Vector3(0f, 0f, -8f);
+        cameraSo.ApplyModifiedPropertiesWithoutUndo();
+        SetArray(coopCamera, "extraTargets", capture.transform);
 
         BuildHud(capture.GetComponent<HeavyCamera>());
         var manager = new GameObject("Game Manager").AddComponent<PhotoGameManager>();
@@ -46,13 +53,22 @@ public static class PhotoPrototypeSceneBuilder
 
         AssetDatabase.SaveAssets();
         EditorSceneManager.SaveScene(scene, ScenePath);
+        AddSceneToBuildSettings();
+    }
+
+    // The round restarts by reloading the scene, which only works for scenes in the build list.
+    static void AddSceneToBuildSettings()
+    {
+        var scenes = new System.Collections.Generic.List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
+        if (scenes.Exists(s => s.path == ScenePath)) return;
+        scenes.Add(new EditorBuildSettingsScene(ScenePath, true));
+        EditorBuildSettings.scenes = scenes.ToArray();
     }
 
     // ---------- Level ----------
 
     static void BuildEnvironment()
     {
-        Camera.main.transform.SetPositionAndRotation(new Vector3(0f, 26f, -20f), Quaternion.Euler(55f, 0f, 0f));
         foreach (var light in Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
             light.intensity = 0.4f;
 
@@ -69,8 +85,32 @@ public static class PhotoPrototypeSceneBuilder
         Prim(PrimitiveType.Cube, "Wall East", level, new Vector3(18f, 0.75f, 0f), new Vector3(0.5f, 1.5f, 26f), wall);
         Prim(PrimitiveType.Cube, "Wall West", level, new Vector3(-18f, 0.75f, 0f), new Vector3(0.5f, 1.5f, 26f), wall);
 
-        // Statue room (north-west) and orb room (north-east)
-        Prim(PrimitiveType.Cube, "Statue Room Wall", level, new Vector3(-12f, 1f, 2f), new Vector3(11f, 2f, 0.5f), wall);
+        // Fence across the level: the north half can only be entered through the player-only gates,
+        // so the big camera has to be thrown over the fence.
+        var fence = Mat("Fence", new Color(0.55f, 0.12f, 0.12f));
+        var gate = Mat("Gate", new Color(0.3f, 0.75f, 0.35f));
+        const float fenceZ = 2f, fenceHeight = 1.2f, gateWidth = 1.6f;
+        float[] gateXs = { -9f, 9f };
+        float segmentStart = -17.75f;
+        for (int i = 0; i <= gateXs.Length; i++)
+        {
+            float segmentEnd = i < gateXs.Length ? gateXs[i] - gateWidth * 0.5f : 17.75f;
+            Prim(PrimitiveType.Cube, "Fence " + (i + 1), level, new Vector3((segmentStart + segmentEnd) * 0.5f, fenceHeight * 0.5f, fenceZ),
+                new Vector3(segmentEnd - segmentStart, fenceHeight, 0.3f), fence);
+            if (i == gateXs.Length) break;
+
+            var gateRoot = Empty("Player Gate " + (i + 1), level, new Vector3(gateXs[i], 0f, fenceZ));
+            Visual(PrimitiveType.Cube, "Floor Mark", gateRoot, new Vector3(0f, 0.02f, 0f), new Vector3(gateWidth, 0.04f, 2f), gate);
+            Visual(PrimitiveType.Cylinder, "Post Left", gateRoot, new Vector3(-gateWidth * 0.5f, 1f, 0f), new Vector3(0.25f, 1f, 0.25f), gate);
+            Visual(PrimitiveType.Cylinder, "Post Right", gateRoot, new Vector3(gateWidth * 0.5f, 1f, 0f), new Vector3(0.25f, 1f, 0.25f), gate);
+            var blocker = gateRoot.gameObject.AddComponent<BoxCollider>();
+            blocker.center = new Vector3(0f, fenceHeight * 0.5f, 0f);
+            blocker.size = new Vector3(gateWidth, fenceHeight, 0.3f);
+            gateRoot.gameObject.AddComponent<PlayerOnlyGate>();
+            segmentStart = gateXs[i] + gateWidth * 0.5f;
+        }
+
+        // Wall between the statue side and the orb side of the restricted area
         Prim(PrimitiveType.Cube, "Orb Room Wall", level, new Vector3(6f, 1f, 8.5f), new Vector3(0.5f, 2f, 8.5f), wall);
 
         // Obstacles
@@ -151,7 +191,8 @@ public static class PhotoPrototypeSceneBuilder
         Visual(PrimitiveType.Cube, "Body", t, new Vector3(0f, 0.6f, 0f), new Vector3(1.4f, 1.2f, 1.8f), wood);
         Visual(PrimitiveType.Cube, "Bellows", t, new Vector3(0f, 0.6f, 1.15f), new Vector3(1f, 0.9f, 0.5f), black);
         Visual(PrimitiveType.Cube, "Front Plate", t, new Vector3(0f, 0.6f, 1.45f), new Vector3(1.2f, 1.1f, 0.1f), wood);
-        Visual(PrimitiveType.Cylinder, "Lens Barrel", t, new Vector3(0f, 0.6f, 1.65f), new Vector3(0.5f, 0.15f, 0.5f), brass, new Vector3(90f, 0f, 0f));
+        Visual(PrimitiveType.Cylinder, "Lens Barrel", t, new Vector3(0f, 0.6f, 1.65f), new Vector3(0.6f, 0.15f, 0.6f), black, new Vector3(90f, 0f, 0f));
+        Visual(PrimitiveType.Sphere, "Lens Glass", t, new Vector3(0f, 0.6f, 1.8f), new Vector3(0.5f, 0.5f, 0.2f), black);
         Visual(PrimitiveType.Cube, "Cloth", t, new Vector3(0f, 0.75f, -1.05f), new Vector3(1.6f, 1.1f, 0.4f), cloth);
         Visual(PrimitiveType.Cylinder, "Tripod Head", t, new Vector3(0f, -0.05f, 0f), new Vector3(0.6f, 0.05f, 0.6f), brass);
         Visual(PrimitiveType.Cylinder, "Leg Front", t, new Vector3(0f, -0.7f, 0.35f), new Vector3(0.12f, 0.75f, 0.12f), wood, new Vector3(25f, 0f, 0f));
@@ -179,6 +220,17 @@ public static class PhotoPrototypeSceneBuilder
         Set(heavy, "rightHandle", handleRight);
         var capture = cam.AddComponent<PhotoCapture>();
         Set(capture, "lens", lens);
+
+        // Wedge on the ground showing what the lens can see.
+        var cone = new GameObject("Vision Cone", typeof(MeshFilter), typeof(MeshRenderer));
+        cone.transform.SetParent(t, false);
+        var coneRenderer = cone.GetComponent<MeshRenderer>();
+        coneRenderer.sharedMaterial = TransparentMat("VisionCone", new Color(1f, 0.95f, 0.5f, 0.25f));
+        coneRenderer.shadowCastingMode = ShadowCastingMode.Off;
+        // Keep the wedge out of the photos: it lives on the TransparentFX layer, which the lens skips.
+        cone.layer = LayerMask.NameToLayer("TransparentFX");
+        lens.cullingMask = ~(1 << cone.layer);
+        Set(cone.AddComponent<VisionCone>(), "photoCamera", capture);
         return capture;
     }
 
@@ -208,7 +260,7 @@ public static class PhotoPrototypeSceneBuilder
 
     // ---------- Subjects ----------
 
-    static PhotoSubject BuildStatue(Vector3 position)
+    static PhotoSubject BuildStatue(Vector3 position, int points)
     {
         var stone = Mat("Stone", new Color(0.8f, 0.8f, 0.78f));
         var statue = new GameObject("Statue");
@@ -223,10 +275,10 @@ public static class PhotoPrototypeSceneBuilder
         Visual(PrimitiveType.Sphere, "Head", t, new Vector3(0f, 2.75f, 0f), Vector3.one * 0.7f, stone);
         Visual(PrimitiveType.Capsule, "Arm Raised", t, new Vector3(0.6f, 2.4f, 0f), new Vector3(0.25f, 0.5f, 0.25f), stone, new Vector3(0f, 0f, -35f));
         Visual(PrimitiveType.Capsule, "Arm Lowered", t, new Vector3(-0.55f, 1.7f, 0f), new Vector3(0.25f, 0.5f, 0.25f), stone, new Vector3(0f, 0f, -15f));
-        return AddSubject(statue, "the Statue");
+        return AddSubject(statue, "the Statue", points);
     }
 
-    static PhotoSubject BuildOrb(Vector3 position)
+    static PhotoSubject BuildOrb(Vector3 position, int points)
     {
         var orb = new GameObject("Orb");
         var t = orb.transform;
@@ -238,10 +290,10 @@ public static class PhotoPrototypeSceneBuilder
         Prim(PrimitiveType.Cylinder, "Pedestal", t, new Vector3(0f, 0.4f, 0f), new Vector3(1.2f, 0.4f, 1.2f), Mat("Stone", new Color(0.8f, 0.8f, 0.78f)));
         Visual(PrimitiveType.Sphere, "Sphere", t, new Vector3(0f, 1.9f, 0f), Vector3.one * 2f, Mat("SubjectBlue", new Color(0.3f, 0.4f, 0.9f)));
         Visual(PrimitiveType.Cylinder, "Ring", t, new Vector3(0f, 1.9f, 0f), new Vector3(2.7f, 0.03f, 2.7f), Mat("Brass", new Color(0.8f, 0.62f, 0.2f)), new Vector3(20f, 0f, 20f));
-        return AddSubject(orb, "the Orb");
+        return AddSubject(orb, "the Orb", points);
     }
 
-    static PhotoSubject BuildStroller(Vector3 position)
+    static PhotoSubject BuildStroller(Vector3 position, Vector3 travel, int points)
     {
         var suit = Mat("StrollerSuit", new Color(0.5f, 0.2f, 0.6f));
         var skin = Mat("Skin", new Color(0.95f, 0.76f, 0.6f));
@@ -264,16 +316,17 @@ public static class PhotoPrototypeSceneBuilder
         Visual(PrimitiveType.Cylinder, "Cane", t, new Vector3(0.5f, 0.6f, 0.3f), new Vector3(0.06f, 0.6f, 0.06f), black);
 
         var so = new SerializedObject(stroller.AddComponent<PatrolMover>());
-        so.FindProperty("travel").vector3Value = new Vector3(8f, 0f, 0f);
+        so.FindProperty("travel").vector3Value = travel;
         so.ApplyModifiedPropertiesWithoutUndo();
-        return AddSubject(stroller, "the Stroller");
+        return AddSubject(stroller, "the Stroller", points);
     }
 
-    static PhotoSubject AddSubject(GameObject go, string displayName)
+    static PhotoSubject AddSubject(GameObject go, string displayName, int points)
     {
         var subject = go.AddComponent<PhotoSubject>();
         var so = new SerializedObject(subject);
         so.FindProperty("displayName").stringValue = displayName;
+        so.FindProperty("points").intValue = points;
         so.ApplyModifiedPropertiesWithoutUndo();
         return subject;
     }
@@ -289,25 +342,53 @@ public static class PhotoPrototypeSceneBuilder
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920f, 1080f);
 
-        // Throw strength circle (first child, so it draws behind the texts)
         var knob = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Knob.psd");
-        var circle = UiImage("Throw Circle", canvas, knob, new Color(0f, 0f, 0f, 0.6f), new Vector2(90f, 90f));
-        var fill = UiImage("Fill", circle.transform, knob, Color.yellow, new Vector2(70f, 70f));
-        fill.type = Image.Type.Filled;
-        fill.fillMethod = Image.FillMethod.Radial360;
-        fill.fillOrigin = (int)Image.Origin360.Top;
-        fill.fillClockwise = true;
-        fill.fillAmount = 0.5f;
-        circle.gameObject.SetActive(false);
-        var indicator = canvasGo.AddComponent<ThrowIndicator>();
-        Set(indicator, "target", heavyCamera);
-        Set(indicator, "circle", circle.gameObject);
-        Set(indicator, "fill", fill);
+        var dark = new Color(0.08f, 0.08f, 0.1f, 0.8f);
 
-        var task = UiText("Task", canvas, 44, TextAnchor.UpperLeft, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(30f, -100f), new Vector2(-30f, -20f));
-        var message = UiText("Message", canvas, 110, TextAnchor.MiddleCenter, new Vector2(0f, 0.6f), new Vector2(1f, 0.9f), Vector2.zero, Vector2.zero);
+        // One throw power circle per camera handle (first children, so they draw behind everything else)
+        for (int side = 0; side < 2; side++)
+        {
+            var circle = UiImage(side == 0 ? "Throw Circle Left" : "Throw Circle Right", canvas, knob, dark, new Vector2(70f, 70f));
+            var fill = RadialFill("Fill", circle.transform, knob, 54f);
+            circle.gameObject.SetActive(false);
+            var indicator = canvasGo.AddComponent<ThrowIndicator>();
+            Set(indicator, "target", heavyCamera);
+            Set(indicator, "circle", circle.gameObject);
+            Set(indicator, "fill", fill);
+            var indicatorSo = new SerializedObject(indicator);
+            indicatorSo.FindProperty("rightHandle").boolValue = side == 1;
+            indicatorSo.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        // Assignment list, top left
+        var taskPanel = UiImage("Assignments", canvas, null, dark, new Vector2(520f, 230f));
+        Anchor(taskPanel.rectTransform, new Vector2(0f, 1f), new Vector2(30f, -30f));
+        var taskTitle = UiText("Title", taskPanel.transform, 26, TextAnchor.UpperLeft, Vector2.zero, Vector2.one, new Vector2(20f, 0f), new Vector2(-20f, -12f));
+        taskTitle.text = "ASSIGNMENTS";
+        taskTitle.color = new Color(1f, 0.85f, 0.3f);
+        var task = UiText("List", taskPanel.transform, 34, TextAnchor.UpperLeft, Vector2.zero, Vector2.one, new Vector2(20f, 0f), new Vector2(-20f, -55f));
+        task.supportRichText = true;
+        task.lineSpacing = 1.2f;
+
+        // Round timer, top centre: a ring that empties and changes colour
+        var timer = UiImage("Timer", canvas, knob, dark, new Vector2(170f, 170f));
+        Anchor(timer.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, -110f));
+        timer.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        var timerFill = RadialFill("Ring", timer.transform, knob, 150f);
+        UiImage("Center", timer.transform, knob, new Color(0.08f, 0.08f, 0.1f, 1f), new Vector2(112f, 112f));
+        var timerText = UiText("Seconds", timer.transform, 60, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+
+        // Score, top right
+        var scorePanel = UiImage("Score", canvas, null, dark, new Vector2(300f, 150f));
+        Anchor(scorePanel.rectTransform, new Vector2(1f, 1f), new Vector2(-30f, -30f));
+        var scoreTitle = UiText("Title", scorePanel.transform, 26, TextAnchor.UpperCenter, Vector2.zero, Vector2.one, Vector2.zero, new Vector2(0f, -12f));
+        scoreTitle.text = "POINTS";
+        scoreTitle.color = new Color(1f, 0.85f, 0.3f);
+        var score = UiText("Value", scorePanel.transform, 80, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0f, 0f), new Vector2(0f, -30f));
+
+        var message = UiText("Message", canvas, 100, TextAnchor.MiddleCenter, new Vector2(0f, 0.45f), new Vector2(1f, 0.8f), Vector2.zero, Vector2.zero);
         var help = UiText("Controls", canvas, 24, TextAnchor.LowerLeft, new Vector2(0f, 0f), new Vector2(0.6f, 0f), new Vector2(30f, 20f), new Vector2(0f, 120f));
-        help.text = "Move: WASD / left stick\nGrab (hold): Space / gamepad north\nUse item, or hold together to charge a throw: Enter / gamepad west";
+        help.text = "Move: WASD / left stick\nGrab (hold): Space / right bumper\nUse item, or hold to charge your throw power: Enter / gamepad west";
 
         var panel = UiImage("Photo Panel", canvas, null, Color.white, new Vector2(680f, 580f));
         var panelRect = panel.rectTransform;
@@ -325,6 +406,17 @@ public static class PhotoPrototypeSceneBuilder
 
         var hud = canvasGo.AddComponent<PhotoHUD>();
         Set(hud, "taskText", task);
+        Set(hud, "scoreText", score);
+        Set(hud, "timerRoot", timer.rectTransform);
+        Set(hud, "timerFill", timerFill);
+        Set(hud, "timerText", timerText);
+        var gradient = new Gradient();
+        gradient.SetKeys(
+            new[] { new GradientColorKey(new Color(0.9f, 0.15f, 0.1f), 0f), new GradientColorKey(new Color(1f, 0.8f, 0.1f), 0.4f), new GradientColorKey(new Color(0.3f, 0.85f, 0.3f), 1f) },
+            new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) });
+        var hudSo = new SerializedObject(hud);
+        hudSo.FindProperty("timerColors").gradientValue = gradient;
+        hudSo.ApplyModifiedPropertiesWithoutUndo();
         Set(hud, "messageText", message);
         Set(hud, "photoPanel", panel.gameObject);
         Set(hud, "photoImage", photoGo.GetComponent<RawImage>());
@@ -341,6 +433,23 @@ public static class PhotoPrototypeSceneBuilder
         image.raycastTarget = false;
         image.rectTransform.sizeDelta = size;
         return image;
+    }
+
+    static Image RadialFill(string name, Transform parent, Sprite sprite, float size)
+    {
+        var fill = UiImage(name, parent, sprite, Color.yellow, new Vector2(size, size));
+        fill.type = Image.Type.Filled;
+        fill.fillMethod = Image.FillMethod.Radial360;
+        fill.fillOrigin = (int)Image.Origin360.Top;
+        fill.fillClockwise = true;
+        return fill;
+    }
+
+    /// <summary>Pins a rect to a screen corner/edge, using the same point as anchor and pivot.</summary>
+    static void Anchor(RectTransform rect, Vector2 anchor, Vector2 position)
+    {
+        rect.anchorMin = rect.anchorMax = rect.pivot = anchor;
+        rect.anchoredPosition = position;
     }
 
     static Text UiText(string name, Transform parent, int size, TextAnchor anchor, Vector2 anchorMin, Vector2 anchorMax, Vector2 offsetMin, Vector2 offsetMax)
@@ -378,6 +487,25 @@ public static class PhotoPrototypeSceneBuilder
         var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
         if (mat != null) return mat;
         mat = new Material(GraphicsSettings.currentRenderPipeline.defaultShader);
+        mat.SetColor("_BaseColor", color);
+        AssetDatabase.CreateAsset(mat, path);
+        return mat;
+    }
+
+    static Material TransparentMat(string name, Color color)
+    {
+        string path = "Assets/Materials/" + name + ".mat";
+        var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (mat != null) return mat;
+        mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+        mat.SetFloat("_Surface", 1f);
+        mat.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+        mat.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+        mat.SetFloat("_ZWrite", 0f);
+        mat.SetFloat("_Cull", (float)CullMode.Off);
+        mat.SetOverrideTag("RenderType", "Transparent");
+        mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        mat.renderQueue = (int)RenderQueue.Transparent;
         mat.SetColor("_BaseColor", color);
         AssetDatabase.CreateAsset(mat, path);
         return mat;

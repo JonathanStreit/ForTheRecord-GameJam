@@ -9,10 +9,12 @@ public class PhotoSubject : MonoBehaviour
     public static readonly List<PhotoSubject> All = new List<PhotoSubject>();
 
     [SerializeField] string displayName = "Subject";
+    [SerializeField] int points = 100;
 
     Collider _collider;
 
     public string DisplayName => displayName;
+    public int Points => points;
     public Vector3 Center => _collider != null ? _collider.bounds.center : transform.position;
 
     void Awake() => _collider = GetComponentInChildren<Collider>();

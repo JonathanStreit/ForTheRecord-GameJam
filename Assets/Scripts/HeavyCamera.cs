@@ -4,7 +4,8 @@ using UnityEngine;
 /// The big old-time camera. It is a normal rigidbody that only lifts off the ground while
 /// BOTH players hold a handle. While carried it hangs on a soft spring between the players,
 /// so it swings with their movement and faces perpendicular to the line between them.
-/// To throw it, both players hold the use button to charge and release it at the same time.
+/// To throw it, each player holds the use button to charge their own power and both release
+/// at the same time; unequal power skews the throw towards the stronger player's side.
 /// </summary>
 public class HeavyCamera : Grabbable
 {
@@ -44,16 +45,23 @@ public class HeavyCamera : Grabbable
     [SerializeField] float maxThrowSpeed = 14f;
     [SerializeField] float minThrowUpSpeed = 2f;
     [SerializeField] float maxThrowUpSpeed = 6f;
+    [Tooltip("How far (degrees) the throw veers towards the player with more power when one is fully charged and the other not at all.")]
+    [SerializeField] float maxThrowSkewAngle = 45f;
 
     const float HeightFrequency = 3f;
 
     PlayerController _left, _right;
-    bool _charging;
-    float _firstReleaseTime = -1f;
+    // Per-player throw state, index 0 = left handle, 1 = right handle.
+    readonly float[] _charge = new float[2];
+    readonly bool[] _wasHeld = new bool[2];
+    readonly float[] _releaseTime = { -1f, -1f };
     float _swaySeed;
 
-    /// <summary>0..1 throw strength, shown by the throw indicator.</summary>
-    public float ThrowCharge { get; private set; }
+    public PlayerController LeftHolder => _left;
+    public PlayerController RightHolder => _right;
+    /// <summary>0..1 throw power of the player on the left / right handle.</summary>
+    public float LeftCharge => _charge[0];
+    public float RightCharge => _charge[1];
     public bool IsCarried => _left != null && _right != null;
     public bool IsHeld => _left != null || _right != null;
     public bool IsResting => !IsCarried && Body.linearVelocity.sqrMagnitude < 0.05f;
@@ -110,38 +118,50 @@ public class HeavyCamera : Grabbable
     {
         if (!IsCarried) return;
 
-        bool leftHeld = _left.UseHeld, rightHeld = _right.UseHeld;
-        if (leftHeld && rightHeld)
+        UpdateCharge(0, _left.UseHeld);
+        UpdateCharge(1, _right.UseHeld);
+
+        bool leftReleased = _releaseTime[0] >= 0f, rightReleased = _releaseTime[1] >= 0f;
+        if (leftReleased && rightReleased)
+            Throw();
+        else if (leftReleased || rightReleased)
         {
-            _charging = true;
-            _firstReleaseTime = -1f;
-            ThrowCharge = Mathf.MoveTowards(ThrowCharge, 1f, Time.deltaTime / throwChargeTime);
-        }
-        else if (_charging)
-        {
-            if (!leftHeld && !rightHeld)
-                Throw();
-            else if (_firstReleaseTime < 0f)
-                _firstReleaseTime = Time.time;
-            else if (Time.time - _firstReleaseTime > throwWindow)
+            float firstRelease = leftReleased ? _releaseTime[0] : _releaseTime[1];
+            if (Time.time - firstRelease > throwWindow)
                 CancelThrow(); // not released together
         }
     }
 
+    void UpdateCharge(int side, bool held)
+    {
+        if (held)
+        {
+            _charge[side] = Mathf.MoveTowards(_charge[side], 1f, Time.deltaTime / throwChargeTime);
+            _releaseTime[side] = -1f;
+        }
+        else if (_wasHeld[side])
+        {
+            _releaseTime[side] = Time.time;
+        }
+        _wasHeld[side] = held;
+    }
+
     void Throw()
     {
-        float charge = ThrowCharge;
-        Vector3 direction = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
+        float power = (_charge[0] + _charge[1]) * 0.5f;
+        // More power on the left -> veers left, more on the right -> veers right.
+        float skew = (_charge[1] - _charge[0]) * maxThrowSkewAngle;
+        Vector3 forward = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
+        Vector3 direction = Quaternion.AngleAxis(skew, Vector3.up) * forward;
         Drop();
-        Body.linearVelocity = direction * Mathf.Lerp(minThrowSpeed, maxThrowSpeed, charge)
-            + Vector3.up * Mathf.Lerp(minThrowUpSpeed, maxThrowUpSpeed, charge);
+        Body.linearVelocity = direction * Mathf.Lerp(minThrowSpeed, maxThrowSpeed, power)
+            + Vector3.up * Mathf.Lerp(minThrowUpSpeed, maxThrowUpSpeed, power);
     }
 
     void CancelThrow()
     {
-        _charging = false;
-        _firstReleaseTime = -1f;
-        ThrowCharge = 0f;
+        _charge[0] = _charge[1] = 0f;
+        _releaseTime[0] = _releaseTime[1] = -1f;
     }
 
     void Detach(PlayerController player)

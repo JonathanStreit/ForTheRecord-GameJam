@@ -2,13 +2,26 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Screen overlay: current task, short messages (countdown, errors) and the last photo.
+/// Screen overlay: assignment list, score, round timer, short messages (countdown, errors) and the last photo.
 /// </summary>
 public class PhotoHUD : MonoBehaviour
 {
     static PhotoHUD _instance;
 
+    [Header("Assignments and score")]
     [SerializeField] Text taskText;
+    [SerializeField] Text scoreText;
+
+    [Header("Timer")]
+    [SerializeField] RectTransform timerRoot;
+    [Tooltip("Image with Image Type = Filled (Radial 360).")]
+    [SerializeField] Image timerFill;
+    [SerializeField] Text timerText;
+    [SerializeField] Gradient timerColors;
+    [Tooltip("The timer starts pulsing below this many seconds.")]
+    [SerializeField] float hurrySeconds = 10f;
+
+    [Header("Messages and photo")]
     [SerializeField] Text messageText;
     [Tooltip("Root object of the photo display, hidden when no photo is shown.")]
     [SerializeField] GameObject photoPanel;
@@ -16,7 +29,7 @@ public class PhotoHUD : MonoBehaviour
     [SerializeField] Text verdictText;
     [SerializeField] float photoDisplaySeconds = 3f;
 
-    float _messageUntil, _photoUntil;
+    float _messageUntil, _photoUntil, _scorePunch, _timeLeft = float.MaxValue;
 
     void Awake()
     {
@@ -31,11 +44,34 @@ public class PhotoHUD : MonoBehaviour
             messageText.text = "";
         if (photoPanel.activeSelf && Time.time >= _photoUntil)
             photoPanel.SetActive(false);
+
+        // Score pops when points are added, the timer pulses once per second when time runs out.
+        _scorePunch = Mathf.MoveTowards(_scorePunch, 0f, Time.deltaTime * 2f);
+        scoreText.transform.localScale = Vector3.one * (1f + 0.5f * _scorePunch);
+        bool hurry = _timeLeft > 0f && _timeLeft <= hurrySeconds;
+        timerRoot.localScale = Vector3.one * (hurry ? 1f + 0.2f * (_timeLeft % 1f) : 1f);
     }
 
-    public static void SetTask(string text)
+    public static void SetTasks(string text)
     {
         if (_instance != null) _instance.taskText.text = text;
+    }
+
+    public static void SetScore(int score, bool animate)
+    {
+        if (_instance == null) return;
+        _instance.scoreText.text = score.ToString();
+        if (animate) _instance._scorePunch = 1f;
+    }
+
+    public static void SetTime(float secondsLeft, float totalSeconds)
+    {
+        if (_instance == null) return;
+        float fraction = Mathf.Clamp01(secondsLeft / totalSeconds);
+        _instance._timeLeft = secondsLeft;
+        _instance.timerFill.fillAmount = fraction;
+        _instance.timerFill.color = _instance.timerColors.Evaluate(fraction);
+        _instance.timerText.text = Mathf.CeilToInt(Mathf.Max(secondsLeft, 0f)).ToString();
     }
 
     public static void ShowMessage(string text, float seconds)

@@ -27,6 +27,18 @@ public class PhotoCapture : MonoBehaviour
 
     RenderTexture _photo;
 
+    public Transform Lens => lens.transform;
+    public float MaxSubjectDistance => maxSubjectDistance;
+    /// <summary>Half of the horizontal angle (degrees) in which a subject counts as in frame.</summary>
+    public float FrameHalfAngle
+    {
+        get
+        {
+            float horizontalFov = Camera.VerticalToHorizontalFieldOfView(lens.fieldOfView, (float)resolution.x / resolution.y);
+            return Mathf.Atan(Mathf.Tan(horizontalFov * 0.5f * Mathf.Deg2Rad) * (1f - 2f * frameMargin)) * Mathf.Rad2Deg;
+        }
+    }
+
     void Awake()
     {
         _photo = new RenderTexture(resolution.x, resolution.y, 24);
