@@ -891,10 +891,6 @@ MonoBehaviour:
   moveSpeed: 6
   acceleration: 40
   turnSpeed: 720
-  grabRange: 2
-  grabMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
   holdPoint: {fileID: 40826052189919201}
   tintRenderers:
   - {fileID: 2129765399923652400}

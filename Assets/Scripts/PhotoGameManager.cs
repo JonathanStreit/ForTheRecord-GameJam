@@ -12,7 +12,7 @@ public class PhotoGameManager : MonoBehaviour
 
     [Tooltip("All subjects the players can photograph this round. Points are set on each subject.")]
     [SerializeField] PhotoSubject[] tasks;
-    [SerializeField] float timeLimit = 60f;
+    [SerializeField] float timeLimit = 180f;
     [Tooltip("The timer starts once this many players have joined.")]
     [SerializeField] int playersToStart = 2;
     [Tooltip("Seconds the final score is shown before the scene restarts.")]

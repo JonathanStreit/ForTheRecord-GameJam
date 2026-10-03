@@ -17,8 +17,6 @@ public class PlayerController : MonoBehaviour
     [SerializeField] float turnSpeed = 720f;
 
     [Header("Grabbing")]
-    [SerializeField] float grabRange = 2f;
-    [SerializeField] LayerMask grabMask = ~0;
     [Tooltip("Where one-handed items (flash, remote trigger) are held.")]
     [SerializeField] Transform holdPoint;
     [Tooltip("Renderers that get the player colour (e.g. the coat).")]
@@ -35,12 +33,13 @@ public class PlayerController : MonoBehaviour
     public Grabbable Held { get; private set; }
     /// <summary>Set by held objects to slow the player down (e.g. while carrying the camera).</summary>
     public float SpeedMultiplier { get; set; } = 1f;
-    /// <summary>True while the use button is held down (charges the camera throw).</summary>
+    /// <summary>True while the use button is held down (charges a throw).</summary>
     public bool UseHeld => _use.IsPressed();
+    /// <summary>0..1 throw power, set by whatever the player is holding and shown by the throw indicator.</summary>
+    public float ThrowCharge { get; set; }
 
     InputAction _move, _grab, _use;
     Vector3 _moveInput;
-    static readonly Collider[] _overlaps = new Collider[32];
 
     void Awake()
     {
@@ -74,9 +73,6 @@ public class PlayerController : MonoBehaviour
             TryGrabNearest();
         else if (Held != null && !_grab.IsPressed())
             Held.Release(this);
-
-        if (Held != null && _use.WasPressedThisFrame())
-            Held.Use(this);
     }
 
     void FixedUpdate()
@@ -95,17 +91,17 @@ public class PlayerController : MonoBehaviour
 
     void TryGrabNearest()
     {
-        int count = Physics.OverlapSphereNonAlloc(transform.position, grabRange, _overlaps, grabMask, QueryTriggerInteraction.Collide);
+        // Every grabbable has its own grab radius; pick the one we are deepest inside of.
         Grabbable nearest = null;
-        float nearestDistance = float.MaxValue;
-        for (int i = 0; i < count; i++)
+        float nearestScore = 1f;
+        foreach (var grabbable in Grabbable.All)
         {
-            var grabbable = _overlaps[i].GetComponentInParent<Grabbable>();
-            if (grabbable == null) continue;
-            float distance = (_overlaps[i].ClosestPoint(transform.position) - transform.position).sqrMagnitude;
-            if (distance < nearestDistance)
+            if (!grabbable.IsAvailable) continue;
+            Vector3 offset = Vector3.ProjectOnPlane(grabbable.transform.position - transform.position, Vector3.up);
+            float score = offset.magnitude / grabbable.GrabRadius;
+            if (score <= nearestScore)
             {
-                nearestDistance = distance;
+                nearestScore = score;
                 nearest = grabbable;
             }
         }

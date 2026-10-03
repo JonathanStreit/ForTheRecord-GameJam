@@ -71,7 +71,8 @@ public class PhotoHUD : MonoBehaviour
         _instance._timeLeft = secondsLeft;
         _instance.timerFill.fillAmount = fraction;
         _instance.timerFill.color = _instance.timerColors.Evaluate(fraction);
-        _instance.timerText.text = Mathf.CeilToInt(Mathf.Max(secondsLeft, 0f)).ToString();
+        int seconds = Mathf.CeilToInt(Mathf.Max(secondsLeft, 0f));
+        _instance.timerText.text = seconds / 60 + ":" + (seconds % 60).ToString("00");
     }
 
     public static void ShowMessage(string text, float seconds)

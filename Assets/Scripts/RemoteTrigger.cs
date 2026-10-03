@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// One-player remote. Use takes the photo, but only while in range of the camera.
+/// One-player remote. Tapping use takes the photo, but only while in range of the camera.
 /// </summary>
 public class RemoteTrigger : CarryItem
 {
@@ -18,7 +18,7 @@ public class RemoteTrigger : CarryItem
         _heavyCamera = photoCamera.GetComponent<HeavyCamera>();
     }
 
-    public override void Use(PlayerController player)
+    protected override void Activate(PlayerController player)
     {
         if (Vector3.Distance(transform.position, photoCamera.transform.position) > range)
         {

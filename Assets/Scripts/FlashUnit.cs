@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// One-player flash. Use starts a 3-2-1 countdown, then the light stays on for a short time.
+/// One-player flash. Tapping use starts a 3-2-1 countdown, then the light stays on for a short time.
 /// A subject counts as lit while it is inside the light cone with a free line of sight.
 /// </summary>
 public class FlashUnit : CarryItem
 {
-    public static readonly List<FlashUnit> All = new List<FlashUnit>();
+    public new static readonly List<FlashUnit> All = new List<FlashUnit>();
 
     [SerializeField] Light flashLight;
     [SerializeField] int countdownSeconds = 3;
@@ -30,10 +30,19 @@ public class FlashUnit : CarryItem
         flashLight.enabled = false;
     }
 
-    void OnEnable() => All.Add(this);
-    void OnDisable() => All.Remove(this);
+    protected override void OnEnable()
+    {
+        base.OnEnable();
+        All.Add(this);
+    }
 
-    public override void Use(PlayerController player)
+    protected override void OnDisable()
+    {
+        base.OnDisable();
+        All.Remove(this);
+    }
+
+    protected override void Activate(PlayerController player)
     {
         if (!_busy) StartCoroutine(FlashRoutine());
     }

@@ -36,11 +36,11 @@ public class HeavyCamera : Grabbable
     [SerializeField] float swayStrength = 8f;
     [SerializeField] float swayChangeSpeed = 0.5f;
 
-    [Header("Throw (both hold the use button, then release together)")]
-    [Tooltip("Seconds both players have to hold the throw button for full strength.")]
+    [Header("Throw (both hold the use button, then release use or grab together)")]
+    [Tooltip("Seconds a player has to hold the throw button for full power.")]
     [SerializeField] float throwChargeTime = 1.5f;
-    [Tooltip("Both players must release the throw button within this many seconds, otherwise the throw is cancelled.")]
-    [SerializeField] float throwWindow = 0.2f;
+    [Tooltip("Both players must release (throw button or grab button) within this many seconds, otherwise the throw is cancelled.")]
+    [SerializeField] float throwWindow = 0.5f;
     [SerializeField] float minThrowSpeed = 4f;
     [SerializeField] float maxThrowSpeed = 14f;
     [SerializeField] float minThrowUpSpeed = 2f;
@@ -55,13 +55,11 @@ public class HeavyCamera : Grabbable
     readonly float[] _charge = new float[2];
     readonly bool[] _wasHeld = new bool[2];
     readonly float[] _releaseTime = { -1f, -1f };
+    // True when that player released by letting go of grab; they stay attached until the throw happens or times out.
+    readonly bool[] _grabReleased = new bool[2];
     float _swaySeed;
 
-    public PlayerController LeftHolder => _left;
-    public PlayerController RightHolder => _right;
-    /// <summary>0..1 throw power of the player on the left / right handle.</summary>
-    public float LeftCharge => _charge[0];
-    public float RightCharge => _charge[1];
+    public override bool IsAvailable => _left == null || _right == null;
     public bool IsCarried => _left != null && _right != null;
     public bool IsHeld => _left != null || _right != null;
     public bool IsResting => !IsCarried && Body.linearVelocity.sqrMagnitude < 0.05f;
@@ -100,6 +98,16 @@ public class HeavyCamera : Grabbable
     {
         if (player != _left && player != _right) return;
 
+        // Letting go of grab with throw power counts as this player's half of the throw.
+        // The player keeps calling Release every frame, so after a cancel the camera simply drops.
+        int side = player == _left ? 0 : 1;
+        if (IsCarried && _charge[side] > 0f)
+        {
+            if (_releaseTime[side] < 0f) _releaseTime[side] = Time.time;
+            _grabReleased[side] = true;
+            return;
+        }
+
         Detach(player);
         Body.useGravity = true;
         CancelThrow();
@@ -120,6 +128,8 @@ public class HeavyCamera : Grabbable
 
         UpdateCharge(0, _left.UseHeld);
         UpdateCharge(1, _right.UseHeld);
+        _left.ThrowCharge = _charge[0];
+        _right.ThrowCharge = _charge[1];
 
         bool leftReleased = _releaseTime[0] >= 0f, rightReleased = _releaseTime[1] >= 0f;
         if (leftReleased && rightReleased)
@@ -128,12 +138,21 @@ public class HeavyCamera : Grabbable
         {
             float firstRelease = leftReleased ? _releaseTime[0] : _releaseTime[1];
             if (Time.time - firstRelease > throwWindow)
-                CancelThrow(); // not released together
+            {
+                // Not released together: no throw. Whoever let go of grab really lets go now.
+                bool leftLetGo = _grabReleased[0], rightLetGo = _grabReleased[1];
+                CancelThrow();
+                if (leftLetGo) Detach(_left);
+                if (rightLetGo) Detach(_right);
+                if (leftLetGo || rightLetGo) Body.useGravity = true;
+            }
         }
     }
 
     void UpdateCharge(int side, bool held)
     {
+        if (_grabReleased[side]) return;
+
         if (held)
         {
             _charge[side] = Mathf.MoveTowards(_charge[side], 1f, Time.deltaTime / throwChargeTime);
@@ -162,6 +181,9 @@ public class HeavyCamera : Grabbable
     {
         _charge[0] = _charge[1] = 0f;
         _releaseTime[0] = _releaseTime[1] = -1f;
+        _grabReleased[0] = _grabReleased[1] = false;
+        if (_left != null) _left.ThrowCharge = 0f;
+        if (_right != null) _right.ThrowCharge = 0f;
     }
 
     void Detach(PlayerController player)
@@ -170,6 +192,7 @@ public class HeavyCamera : Grabbable
         var other = _left != null ? _left : _right;
         if (other != null) other.SpeedMultiplier = 1f;
         player.SpeedMultiplier = 1f;
+        player.ThrowCharge = 0f;
         player.ClearHeld(this);
         IgnorePlayerCollision(player, false);
     }

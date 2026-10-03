@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -6,7 +7,15 @@ using UnityEngine;
 [RequireComponent(typeof(Rigidbody))]
 public abstract class Grabbable : MonoBehaviour
 {
+    public static readonly List<Grabbable> All = new List<Grabbable>();
+
+    [Tooltip("A player can grab this when standing within this distance (measured on the ground from this object's position).")]
+    [SerializeField] float grabRadius = 1.8f;
+
     public Rigidbody Body { get; private set; }
+    public float GrabRadius => grabRadius;
+    /// <summary>False while nobody else can grab it (already held / no free handle).</summary>
+    public abstract bool IsAvailable { get; }
     protected Collider[] Colliders { get; private set; }
 
     protected virtual void Awake()
@@ -15,14 +24,14 @@ public abstract class Grabbable : MonoBehaviour
         Colliders = GetComponentsInChildren<Collider>();
     }
 
+    protected virtual void OnEnable() => All.Add(this);
+    protected virtual void OnDisable() => All.Remove(this);
+
     /// <summary>Returns true if the player is now holding this object.</summary>
     public abstract bool TryGrab(PlayerController player);
 
     /// <summary>Called when the player lets go of the grab button.</summary>
     public abstract void Release(PlayerController player);
-
-    /// <summary>Called when the holding player presses the use button.</summary>
-    public virtual void Use(PlayerController player) { }
 
     protected void IgnorePlayerCollision(PlayerController player, bool ignore)
     {
