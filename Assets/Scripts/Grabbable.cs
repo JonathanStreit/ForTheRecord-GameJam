@@ -16,6 +16,8 @@ public abstract class Grabbable : MonoBehaviour
     public float GrabRadius => grabRadius;
     /// <summary>False while nobody else can grab it (already held / no free handle).</summary>
     public abstract bool IsAvailable { get; }
+    /// <summary>Low-priority grabbables are only grabbed when nothing else is in reach.</summary>
+    public virtual bool LowPriority => false;
     protected Collider[] Colliders { get; private set; }
 
     protected virtual void Awake()

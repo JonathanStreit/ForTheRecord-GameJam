@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
@@ -18,9 +19,25 @@ public class HeavyCamera : Grabbable
     [Tooltip("The camera drops when the two players are further apart than this.")]
     [SerializeField] float maxPlayerDistance = 6.5f;
     [Tooltip("A player holding a handle alone lets go when further away than this.")]
-    [SerializeField] float maxHandleDistance = 3.5f;
+    [SerializeField] float maxHandleDistance = 4.5f;
     [SerializeField, Range(0.1f, 1f)] float carrySpeedMultiplier = 0.7f;
     [SerializeField] float turnSpeed = 8f;
+    [Tooltip("Fraction of the drop distances at which the warning (red circle) and the resistance start.")]
+    [SerializeField, Range(0.1f, 1f)] float edgeStart = 0.7f;
+    [Tooltip("How much walking further apart is slowed right before the camera drops (1 = cannot walk apart at all).")]
+    [SerializeField, Range(0f, 1f)] float edgeResistance = 0.75f;
+
+    [Header("Impact (dropped or thrown camera hitting something)")]
+    [Tooltip("Scene particle system that is moved to the impact point and played.")]
+    [SerializeField] ParticleSystem landingShockwave;
+    [SerializeField] float minImpactSpeed = 2f;
+    [SerializeField] float impactShake = 0.5f;
+    [SerializeField] AudioClip impactSound;
+
+    [Header("Pick-up animation (when the second player grabs)")]
+    [SerializeField] float pickupPopSeconds = 0.25f;
+    [Tooltip("How much bigger the camera gets at the peak of the pop (0.2 = 20%).")]
+    [SerializeField] float pickupPopScale = 0.2f;
 
     [Header("Swing (inertia between the players)")]
     [Tooltip("Swings per second. Lower = heavier, lazier swing.")]
@@ -58,8 +75,14 @@ public class HeavyCamera : Grabbable
     // True when that player released by letting go of grab; they stay attached until the throw happens or times out.
     readonly bool[] _grabReleased = new bool[2];
     float _swaySeed;
+    float _lastImpactTime;
+    Coroutine _pickupPop;
 
     public override bool IsAvailable => _left == null || _right == null;
+    public PlayerController LeftHolder => _left;
+    public PlayerController RightHolder => _right;
+    /// <summary>0 = carried comfortably, 1 = about to drop (players too far apart or camera swinging too far out).</summary>
+    public float CarryStress { get; private set; }
     public bool IsCarried => _left != null && _right != null;
     public bool IsHeld => _left != null || _right != null;
     public bool IsResting => !IsCarried && Body.linearVelocity.sqrMagnitude < 0.05f;
@@ -90,6 +113,13 @@ public class HeavyCamera : Grabbable
         {
             Body.useGravity = false;
             _left.SpeedMultiplier = _right.SpeedMultiplier = carrySpeedMultiplier;
+            if (_pickupPop != null) StopCoroutine(_pickupPop);
+            _pickupPop = StartCoroutine(PickupPop());
+        }
+        else
+        {
+            // Holding the camera alone: stand still until the partner grabs the other handle.
+            player.SpeedMultiplier = 0f;
         }
         return true;
     }
@@ -111,6 +141,19 @@ public class HeavyCamera : Grabbable
         Detach(player);
         Body.useGravity = true;
         CancelThrow();
+    }
+
+    // Quick squash-and-stretch pop that sells the moment both players lift the camera.
+    IEnumerator PickupPop()
+    {
+        for (float t = 0f; t < pickupPopSeconds; t += Time.deltaTime)
+        {
+            float pop = Mathf.Sin(t / pickupPopSeconds * Mathf.PI) * pickupPopScale;
+            transform.localScale = new Vector3(1f - pop * 0.5f, 1f + pop, 1f - pop * 0.5f);
+            yield return null;
+        }
+        transform.localScale = Vector3.one;
+        _pickupPop = null;
     }
 
     /// <summary>Forces both players to let go without a throw.</summary>
@@ -173,6 +216,7 @@ public class HeavyCamera : Grabbable
         Vector3 forward = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
         Vector3 direction = Quaternion.AngleAxis(skew, Vector3.up) * forward;
         Drop();
+        CoopCamera.Shake(0.25f, 0.15f);
         Body.linearVelocity = direction * Mathf.Lerp(minThrowSpeed, maxThrowSpeed, power)
             + Vector3.up * Mathf.Lerp(minThrowUpSpeed, maxThrowUpSpeed, power);
     }
@@ -190,8 +234,15 @@ public class HeavyCamera : Grabbable
     {
         if (player == _left) _left = null; else _right = null;
         var other = _left != null ? _left : _right;
-        if (other != null) other.SpeedMultiplier = 1f;
+        if (other != null)
+        {
+            // The remaining player now holds the camera alone and cannot move.
+            other.SpeedMultiplier = 0f;
+            other.SetMoveResistance(Vector3.zero, 0f);
+        }
+        CarryStress = 0f;
         player.SpeedMultiplier = 1f;
+        player.SetMoveResistance(Vector3.zero, 0f);
         player.ThrowCharge = 0f;
         player.ClearHeld(this);
         IgnorePlayerCollision(player, false);
@@ -223,6 +274,14 @@ public class HeavyCamera : Grabbable
             return;
         }
 
+        // Close to dropping: warn (CarryStress drives the red circle) and make walking further apart harder.
+        float spanStress = Mathf.InverseLerp(maxPlayerDistance * edgeStart, maxPlayerDistance, span.magnitude);
+        float swingStress = Mathf.InverseLerp(maxSwingOffset * edgeStart, maxSwingOffset, horizontalOffset.magnitude);
+        CarryStress = Mathf.Max(spanStress, swingStress);
+        Vector3 apart = span.normalized;
+        _left.SetMoveResistance(-apart, spanStress * edgeResistance);
+        _right.SetMoveResistance(apart, spanStress * edgeResistance);
+
         // Horizontal: soft, underdamped spring to the midpoint -> the camera lags behind and swings.
         Vector3 carrierVelocity = Vector3.ProjectOnPlane((_left.Body.linearVelocity + _right.Body.linearVelocity) * 0.5f, Vector3.up);
         Vector3 velocity = Body.linearVelocity;
@@ -248,6 +307,23 @@ public class HeavyCamera : Grabbable
             (target * Quaternion.Inverse(Body.rotation)).ToAngleAxis(out float angle, out Vector3 axis);
             if (angle > 180f) angle -= 360f;
             Body.angularVelocity = float.IsFinite(axis.x) ? axis * (angle * Mathf.Deg2Rad * turnSpeed) : Vector3.zero;
+        }
+    }
+
+    void OnCollisionEnter(Collision collision)
+    {
+        // Screen shake and a dust shockwave when the dropped or thrown camera hits something.
+        if (IsCarried || Time.time - _lastImpactTime < 0.3f) return;
+        if (collision.relativeVelocity.magnitude < minImpactSpeed) return;
+        if (collision.collider.GetComponentInParent<PlayerController>() != null) return;
+
+        _lastImpactTime = Time.time;
+        CoopCamera.Shake(impactShake, 0.3f);
+        GameAudio.Play(impactSound);
+        if (landingShockwave != null)
+        {
+            landingShockwave.transform.position = collision.GetContact(0).point + Vector3.up * 0.1f;
+            landingShockwave.Play();
         }
     }
 

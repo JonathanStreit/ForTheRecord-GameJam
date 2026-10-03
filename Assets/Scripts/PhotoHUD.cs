@@ -29,13 +29,20 @@ public class PhotoHUD : MonoBehaviour
     [SerializeField] Text verdictText;
     [SerializeField] float photoDisplaySeconds = 3f;
 
-    float _messageUntil, _photoUntil, _scorePunch, _timeLeft = float.MaxValue;
+    [Header("Item pick-up prompt")]
+    [Tooltip("Root object of the prompt, hidden when no prompt is shown.")]
+    [SerializeField] GameObject promptPanel;
+    [SerializeField] Text promptTitle;
+    [SerializeField] Text promptText;
+
+    float _messageUntil, _photoUntil, _promptUntil, _scorePunch, _timeLeft = float.MaxValue;
 
     void Awake()
     {
         _instance = this;
         messageText.text = "";
         photoPanel.SetActive(false);
+        if (promptPanel != null) promptPanel.SetActive(false);
     }
 
     void Update()
@@ -44,6 +51,8 @@ public class PhotoHUD : MonoBehaviour
             messageText.text = "";
         if (photoPanel.activeSelf && Time.time >= _photoUntil)
             photoPanel.SetActive(false);
+        if (promptPanel != null && promptPanel.activeSelf && Time.time >= _promptUntil)
+            promptPanel.SetActive(false);
 
         // Score pops when points are added, the timer pulses once per second when time runs out.
         _scorePunch = Mathf.MoveTowards(_scorePunch, 0f, Time.deltaTime * 2f);
@@ -80,6 +89,15 @@ public class PhotoHUD : MonoBehaviour
         if (_instance == null) return;
         _instance.messageText.text = text;
         _instance._messageUntil = Time.time + seconds;
+    }
+
+    public static void ShowPrompt(string title, string text, float seconds)
+    {
+        if (_instance == null || _instance.promptPanel == null) return;
+        _instance.promptTitle.text = title;
+        _instance.promptText.text = text;
+        _instance.promptPanel.SetActive(true);
+        _instance._promptUntil = Time.time + seconds;
     }
 
     public static void ShowPhoto(Texture photo, string verdict)

@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Text;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -17,6 +18,11 @@ public class PhotoGameManager : MonoBehaviour
     [SerializeField] int playersToStart = 2;
     [Tooltip("Seconds the final score is shown before the scene restarts.")]
     [SerializeField] float restartDelay = 6f;
+
+    [Header("Sounds (played shortly after the shutter)")]
+    [SerializeField] AudioClip goodPhotoSound;
+    [SerializeField] AudioClip badPhotoSound;
+    [SerializeField] float verdictSoundDelay = 0.4f;
 
     State _state;
     bool[] _done;
@@ -98,9 +104,16 @@ public class PhotoGameManager : MonoBehaviour
         else
             verdict = "No open assignment in the picture.";
         PhotoHUD.ShowPhoto(result.Photo, verdict);
+        StartCoroutine(PlayVerdictSound(gained > 0 ? goodPhotoSound : badPhotoSound));
 
         if (System.Array.TrueForAll(_done, done => done))
             EndRound("ALL PHOTOS TAKEN!");
+    }
+
+    IEnumerator PlayVerdictSound(AudioClip clip)
+    {
+        yield return new WaitForSeconds(verdictSoundDelay);
+        GameAudio.Play(clip);
     }
 
     void EndRound(string headline)

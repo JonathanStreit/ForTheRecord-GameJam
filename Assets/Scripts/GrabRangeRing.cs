@@ -2,49 +2,59 @@ using UnityEngine;
 
 /// <summary>
 /// Ring on the ground showing how close a player has to stand to grab the target.
-/// Hidden while the target cannot be grabbed (e.g. both camera handles are taken).
+/// While a player holds the target, the circle is filled with that player's colour.
 /// </summary>
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
 public class GrabRangeRing : MonoBehaviour
 {
-    [SerializeField] Grabbable target;
-    [SerializeField] float lineWidth = 0.15f;
+    static readonly int BaseColor = Shader.PropertyToID("_BaseColor");
+
+    [SerializeField] CarryItem target;
+    [SerializeField] float lineWidth = 0.1f;
     [SerializeField] float groundHeight = 0.04f;
     [SerializeField] int segments = 48;
+    [SerializeField] Color freeColor = new Color(1f, 1f, 1f, 0.6f);
+    [SerializeField, Range(0f, 1f)] float fillAlpha = 0.4f;
 
-    MeshRenderer _renderer;
+    MeshRenderer _outline, _fill;
+    MaterialPropertyBlock _block;
 
     void Start()
     {
-        _renderer = GetComponent<MeshRenderer>();
-        float outer = target.GrabRadius, inner = outer - lineWidth;
+        _block = new MaterialPropertyBlock();
+        _outline = GetComponent<MeshRenderer>();
+        float radius = target.GrabRadius;
+        GetComponent<MeshFilter>().mesh = RingMesh.Create(radius - lineWidth, radius, 0f, 360f, segments);
 
-        var vertices = new Vector3[(segments + 1) * 2];
-        var triangles = new int[segments * 6];
-        for (int i = 0; i <= segments; i++)
-        {
-            float angle = i / (float)segments * Mathf.PI * 2f;
-            var direction = new Vector3(Mathf.Sin(angle), 0f, Mathf.Cos(angle));
-            vertices[i * 2] = direction * inner;
-            vertices[i * 2 + 1] = direction * outer;
-        }
-        for (int i = 0; i < segments; i++)
-        {
-            int v = i * 2, t = i * 6;
-            triangles[t] = v; triangles[t + 1] = v + 1; triangles[t + 2] = v + 3;
-            triangles[t + 3] = v; triangles[t + 4] = v + 3; triangles[t + 5] = v + 2;
-        }
-
-        var mesh = new Mesh { name = "Grab Range Ring", vertices = vertices, triangles = triangles };
-        mesh.RecalculateBounds();
-        GetComponent<MeshFilter>().mesh = mesh;
+        var fill = new GameObject("Fill", typeof(MeshFilter), typeof(MeshRenderer));
+        fill.layer = gameObject.layer;
+        fill.transform.SetParent(transform, false);
+        fill.GetComponent<MeshFilter>().mesh = RingMesh.Create(0f, radius - lineWidth, 0f, 360f, segments);
+        _fill = fill.GetComponent<MeshRenderer>();
+        _fill.sharedMaterial = _outline.sharedMaterial;
+        _fill.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
     }
 
     void LateUpdate()
     {
-        // Stay flat on the ground under the target, even while it swings or tumbles.
-        _renderer.enabled = target.IsAvailable;
+        // Stay flat on the ground under the target, even while it tumbles or is carried.
         Vector3 position = target.transform.position;
         transform.SetPositionAndRotation(new Vector3(position.x, groundHeight, position.z), Quaternion.identity);
+
+        PlayerController holder = target.Holder;
+        _fill.enabled = holder != null;
+        Color outline = holder != null ? holder.Color : freeColor;
+        outline.a = freeColor.a;
+        SetColor(_outline, outline);
+        if (holder == null) return;
+        Color fillColor = holder.Color;
+        fillColor.a = fillAlpha;
+        SetColor(_fill, fillColor);
+    }
+
+    void SetColor(MeshRenderer part, Color color)
+    {
+        _block.SetColor(BaseColor, color);
+        part.SetPropertyBlock(_block);
     }
 }

@@ -13,6 +13,8 @@ public static class PhotoPrototypeSceneBuilder
 {
     const string ScenePath = "Assets/Scenes/PhotoPrototype.unity";
     const string PlayerPrefabPath = "Assets/Prefabs/Player.prefab";
+    const string ControlsPrefabPath = "Assets/Prefabs/Controls.prefab";
+    static readonly Color PanelColor = new Color(0.08f, 0.08f, 0.1f, 0.8f);
 
     [MenuItem("Tools/For The Record/Rebuild Prototype Scene")]
     static void RebuildFromMenu()
@@ -58,9 +60,82 @@ public static class PhotoPrototypeSceneBuilder
         SetArray(manager, "tasks", statue, orb, visitor, goldenStatue);
 
         AssetDatabase.SaveAssets();
+        AssignSoundsAndPrompts();
         EditorSceneManager.SaveScene(scene, ScenePath);
         AddSceneToBuildSettings();
     }
+
+    // ---------- Pieces that can also be applied to an existing scene / prefab ----------
+
+    /// <summary>Adds the walk animation and the footstep sound to a player object (expects the builder's child names).</summary>
+    public static void SetupPlayerAnimation(GameObject player)
+    {
+        var t = player.transform;
+        var animator = player.GetComponent<PlayerAnimator>();
+        if (animator == null) animator = player.AddComponent<PlayerAnimator>();
+        Set(animator, "footLeft", t.Find("Foot Left"));
+        Set(animator, "footRight", t.Find("Foot Right"));
+        Set(animator, "armLeft", t.Find("Arm Left"));
+        Set(animator, "armRight", t.Find("Arm Right"));
+        Set(animator, "body", t.Find("Coat"));
+
+        var existing = t.Find("Footsteps");
+        var source = existing != null ? existing.GetComponent<AudioSource>() : Empty("Footsteps", t, Vector3.zero).gameObject.AddComponent<AudioSource>();
+        source.clip = Clip("Players_Footsteps.mp3");
+        source.loop = true;
+        source.playOnAwake = true;
+        source.spatialBlend = 0f;
+        source.volume = 0f;
+        Set(animator, "footsteps", source);
+    }
+
+    /// <summary>Adds the item pick-up prompt panel to the HUD canvas and hooks it up.</summary>
+    public static void BuildPickupPrompt(Transform canvas, PhotoHUD hud)
+    {
+        var gold = new Color(1f, 0.85f, 0.3f);
+        var panel = UiImage("Item Prompt", canvas, null, PanelColor, new Vector2(640f, 150f));
+        Anchor(panel.rectTransform, new Vector2(0.5f, 0f), new Vector2(-150f, 40f));
+        var title = UiText("Title", panel.transform, 28, TextAnchor.UpperLeft, Vector2.zero, Vector2.one, new Vector2(20f, 0f), new Vector2(-20f, -10f));
+        title.color = gold;
+        var buttonSprite = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/WestButton.png");
+        if (buttonSprite != null)
+        {
+            var icon = UiImage("Button Icon", panel.transform, buttonSprite, Color.white, new Vector2(70f, 70f));
+            icon.preserveAspect = true;
+            Anchor(icon.rectTransform, Vector2.zero, new Vector2(20f, 18f));
+        }
+        var text = UiText("Text", panel.transform, 24, TextAnchor.MiddleLeft, Vector2.zero, Vector2.one, new Vector2(110f, 10f), new Vector2(-20f, -50f));
+        text.lineSpacing = 1.2f;
+
+        Set(hud, "promptPanel", panel.gameObject);
+        Set(hud, "promptTitle", title);
+        Set(hud, "promptText", text);
+    }
+
+    /// <summary>Assigns the clips from Assets/Sounds and the pick-up prompt texts to the objects in the open scene.</summary>
+    public static void AssignSoundsAndPrompts()
+    {
+        Set(Object.FindAnyObjectByType<PhotoCapture>(), "shutterSound", Clip("Camera_Shutter_Sound.wav"));
+        Set(Object.FindAnyObjectByType<HeavyCamera>(), "impactSound", Clip("Dropping_Camera_Sound.wav"));
+        var manager = Object.FindAnyObjectByType<PhotoGameManager>();
+        Set(manager, "goodPhotoSound", Clip("Good_Photo_Sound.wav"));
+        Set(manager, "badPhotoSound", Clip("Bad_Photo_Sound.mp3"));
+
+        SetPrompt(Object.FindAnyObjectByType<FlashUnit>(), "FLASH",
+            "Tap: 3-2-1 countdown, then it lights the subject for 2 seconds\nHold, then release: throw it");
+        SetPrompt(Object.FindAnyObjectByType<RemoteTrigger>(), "REMOTE TRIGGER",
+            "Tap: take the photo (stay close to the camera)\nHold, then release: throw it");
+    }
+
+    static void SetPrompt(CarryItem item, string title, string text)
+    {
+        var so = new SerializedObject(item);
+        so.FindProperty("promptTitle").stringValue = title;
+        so.FindProperty("promptText").stringValue = text;
+        so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    static AudioClip Clip(string fileName) => AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Sounds/" + fileName);
 
     // The round restarts by reloading the scene, which only works for scenes in the build list.
     static void AddSceneToBuildSettings()
@@ -166,6 +241,16 @@ public static class PhotoPrototypeSceneBuilder
         var controller = player.AddComponent<PlayerController>();
         Set(controller, "holdPoint", hold);
         SetArray(controller, "tintRenderers", body.GetComponent<Renderer>(), armL.GetComponent<Renderer>(), armR.GetComponent<Renderer>());
+        Set(controller, "stepDust", BuildStepDust(t));
+
+        // Lets the other player pick this one up (held above the head) and throw them.
+        var carryable = new SerializedObject(player.AddComponent<PlayerCarryable>());
+        carryable.FindProperty("grabRadius").floatValue = 1.5f;
+        carryable.FindProperty("holdOffset").vector3Value = new Vector3(0f, 1.7f, -1f);
+        carryable.FindProperty("maxThrowSpeed").floatValue = 9f;
+        carryable.ApplyModifiedPropertiesWithoutUndo();
+
+        SetupPlayerAnimation(player);
 
         var prefab = PrefabUtility.SaveAsPrefabAsset(player, PlayerPrefabPath);
         Object.DestroyImmediate(player);
@@ -237,7 +322,7 @@ public static class PhotoPrototypeSceneBuilder
         var cone = new GameObject("Vision Cone", typeof(MeshFilter), typeof(MeshRenderer));
         cone.transform.SetParent(t, false);
         var coneRenderer = cone.GetComponent<MeshRenderer>();
-        coneRenderer.sharedMaterial = TransparentMat("VisionCone", new Color(1f, 0.95f, 0.5f, 0.25f));
+        coneRenderer.sharedMaterial = TransparentMat("VisionCone", new Color(1f, 1f, 1f, 0.25f));
         coneRenderer.shadowCastingMode = ShadowCastingMode.Off;
         // Keep the wedge out of the photos: it lives on the TransparentFX layer, which the lens skips.
         cone.layer = LayerMask.NameToLayer("TransparentFX");
@@ -248,14 +333,98 @@ public static class PhotoPrototypeSceneBuilder
         var heavySo = new SerializedObject(heavy);
         heavySo.FindProperty("grabRadius").floatValue = 3f;
         heavySo.ApplyModifiedPropertiesWithoutUndo();
-        var ring = new GameObject("Grab Range Ring", typeof(MeshFilter), typeof(MeshRenderer));
+        // Its halves fill with the colours of the players holding the handles and it turns red before a drop.
+        var ring = new GameObject("Grab Ring");
         ring.transform.SetParent(t, false);
         ring.layer = cone.layer;
+        var cameraRing = ring.AddComponent<CameraGrabRing>();
+        Set(cameraRing, "target", heavy);
+        Set(cameraRing, "material", TransparentMat("GrabRing", new Color(1f, 1f, 1f, 0.6f)));
+
+        // Dust ring that plays where the dropped or thrown camera lands.
+        Set(heavy, "landingShockwave", BuildShockwave());
+        return capture;
+    }
+
+    static void AddGrabRing(Grabbable target)
+    {
+        var ring = new GameObject("Grab Range Ring", typeof(MeshFilter), typeof(MeshRenderer));
+        ring.transform.SetParent(target.transform, false);
+        ring.layer = LayerMask.NameToLayer("TransparentFX");
         var ringRenderer = ring.GetComponent<MeshRenderer>();
         ringRenderer.sharedMaterial = TransparentMat("GrabRing", new Color(1f, 1f, 1f, 0.6f));
         ringRenderer.shadowCastingMode = ShadowCastingMode.Off;
-        Set(ring.AddComponent<GrabRangeRing>(), "target", heavy);
-        return capture;
+        Set(ring.AddComponent<GrabRangeRing>(), "target", target);
+    }
+
+    // ---------- Particles ----------
+
+    static ParticleSystem BuildStepDust(Transform player)
+    {
+        var dust = NewDustSystem("Step Dust", player, new Vector3(0f, -0.9f, -0.2f));
+        var main = dust.main;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.4f, 0.7f);
+        main.startSpeed = 0.3f;
+        main.startSize = new ParticleSystem.MinMaxCurve(0.25f, 0.5f);
+        main.gravityModifier = -0.03f;
+        var emission = dust.emission;
+        emission.rateOverTime = 0f;
+        emission.rateOverDistance = 2f;
+        var shape = dust.shape;
+        shape.shapeType = ParticleSystemShapeType.Sphere;
+        shape.radius = 0.15f;
+        return dust;
+    }
+
+    static ParticleSystem BuildShockwave()
+    {
+        var shockwave = NewDustSystem("Camera Shockwave", null, Vector3.zero);
+        var main = shockwave.main;
+        main.loop = false;
+        main.playOnAwake = false;
+        main.duration = 1f;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 0.8f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(6f, 9f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.5f, 0.9f);
+        var emission = shockwave.emission;
+        emission.rateOverTime = 0f;
+        emission.SetBursts(new[] { new ParticleSystem.Burst(0f, 50) });
+        // Flat circle on the ground, particles fly outwards from its edge and slow down quickly.
+        var shape = shockwave.shape;
+        shape.shapeType = ParticleSystemShapeType.Circle;
+        shape.radius = 0.8f;
+        shape.radiusThickness = 0f;
+        shape.rotation = new Vector3(90f, 0f, 0f);
+        var limit = shockwave.limitVelocityOverLifetime;
+        limit.enabled = true;
+        limit.drag = 4f;
+        return shockwave;
+    }
+
+    /// <summary>Particle system with the shared dust look: soft beige puffs that grow and fade out.</summary>
+    static ParticleSystem NewDustSystem(string name, Transform parent, Vector3 localPosition)
+    {
+        var system = Empty(name, parent, localPosition).gameObject.AddComponent<ParticleSystem>();
+        var main = system.main;
+        main.startColor = new Color(0.85f, 0.82f, 0.75f, 0.6f);
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 200;
+
+        var size = system.sizeOverLifetime;
+        size.enabled = true;
+        size.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0.5f, 1f, 1.2f));
+        var color = system.colorOverLifetime;
+        color.enabled = true;
+        var fade = new Gradient();
+        fade.SetKeys(
+            new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+            new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) });
+        color.color = fade;
+
+        var particleRenderer = system.GetComponent<ParticleSystemRenderer>();
+        particleRenderer.sharedMaterial = GraphicsSettings.currentRenderPipeline.defaultParticleMaterial;
+        particleRenderer.shadowCastingMode = ShadowCastingMode.Off;
+        return system;
     }
 
     static void BuildFlash(Vector3 position)
@@ -288,7 +457,9 @@ public static class PhotoPrototypeSceneBuilder
         light.intensity = 60f;
         light.enabled = false;
         flash.AddComponent<Rigidbody>();
-        Set(flash.AddComponent<FlashUnit>(), "flashLight", light);
+        var flashUnit = flash.AddComponent<FlashUnit>();
+        Set(flashUnit, "flashLight", light);
+        AddGrabRing(flashUnit);
     }
 
     static void BuildRemote(Vector3 position, PhotoCapture capture)
@@ -310,7 +481,9 @@ public static class PhotoPrototypeSceneBuilder
         box.center = new Vector3(0f, 0.2f, 0f);
         box.size = new Vector3(0.55f, 0.4f, 0.8f);
         remote.AddComponent<Rigidbody>();
-        Set(remote.AddComponent<RemoteTrigger>(), "photoCamera", capture);
+        var trigger = remote.AddComponent<RemoteTrigger>();
+        Set(trigger, "photoCamera", capture);
+        AddGrabRing(trigger);
     }
 
     // ---------- Subjects ----------
@@ -397,7 +570,7 @@ public static class PhotoPrototypeSceneBuilder
         scaler.referenceResolution = new Vector2(1920f, 1080f);
 
         var knob = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Knob.psd");
-        var dark = new Color(0.08f, 0.08f, 0.1f, 0.8f);
+        var dark = PanelColor;
 
         // One throw power circle per player (first children, so they draw behind everything else)
         for (int side = 0; side < 2; side++)
@@ -440,8 +613,9 @@ public static class PhotoPrototypeSceneBuilder
         var score = UiText("Value", scorePanel.transform, 80, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one, new Vector2(0f, 0f), new Vector2(0f, -30f));
 
         var message = UiText("Message", canvas, 100, TextAnchor.MiddleCenter, new Vector2(0f, 0.45f), new Vector2(1f, 0.8f), Vector2.zero, Vector2.zero);
-        var help = UiText("Controls", canvas, 24, TextAnchor.LowerLeft, new Vector2(0f, 0f), new Vector2(0.6f, 0f), new Vector2(30f, 20f), new Vector2(0f, 120f));
-        help.text = "Move: WASD / left stick\nGrab (hold): Space / right bumper\nUse item (tap) or charge a throw (hold): Enter / gamepad west";
+        // The controls help is a hand-made prefab; it is only placed here, never generated or changed.
+        var controlsPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(ControlsPrefabPath);
+        if (controlsPrefab != null) PrefabUtility.InstantiatePrefab(controlsPrefab, canvas);
 
         var panel = UiImage("Photo Panel", canvas, null, Color.white, new Vector2(680f, 580f));
         var panelRect = panel.rectTransform;
@@ -474,6 +648,7 @@ public static class PhotoPrototypeSceneBuilder
         Set(hud, "photoPanel", panel.gameObject);
         Set(hud, "photoImage", photoGo.GetComponent<RawImage>());
         Set(hud, "verdictText", verdict);
+        BuildPickupPrompt(canvas, hud);
     }
 
     static Image UiImage(string name, Transform parent, Sprite sprite, Color color, Vector2 size)
@@ -549,7 +724,11 @@ public static class PhotoPrototypeSceneBuilder
     {
         string path = "Assets/Materials/" + name + ".mat";
         var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
-        if (mat != null) return mat;
+        if (mat != null)
+        {
+            mat.SetColor("_BaseColor", color);
+            return mat;
+        }
         mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
         mat.SetFloat("_Surface", 1f);
         mat.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);

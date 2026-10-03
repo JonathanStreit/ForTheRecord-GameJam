@@ -24,6 +24,7 @@ public class PhotoCapture : MonoBehaviour
     [Tooltip("How far from the edge of the picture a subject has to be (0 = anywhere in the picture).")]
     [SerializeField, Range(0f, 0.4f)] float frameMargin = 0.1f;
     [SerializeField] LayerMask obstructionMask = ~0;
+    [SerializeField] AudioClip shutterSound;
 
     RenderTexture _photo;
 
@@ -54,6 +55,8 @@ public class PhotoCapture : MonoBehaviour
     public PhotoResult TakePhoto()
     {
         lens.Render();
+        CoopCamera.Shake(0.3f, 0.25f);
+        GameAudio.Play(shutterSound);
 
         var result = new PhotoResult { Photo = _photo };
         foreach (var subject in PhotoSubject.All)

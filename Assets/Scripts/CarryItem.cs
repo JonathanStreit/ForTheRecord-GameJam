@@ -7,6 +7,14 @@ using UnityEngine;
 /// </summary>
 public class CarryItem : Grabbable
 {
+    [Tooltip("Position relative to the player's hold point while carried.")]
+    [SerializeField] Vector3 holdOffset;
+
+    [Header("Pick-up prompt (leave the text empty for none)")]
+    [SerializeField] string promptTitle;
+    [SerializeField, TextArea] string promptText;
+    [SerializeField] float promptSeconds = 5f;
+
     [Header("Throw (hold the use button)")]
     [Tooltip("Releasing the use button faster than this activates the item instead of throwing it.")]
     [SerializeField] float tapTime = 0.25f;
@@ -30,8 +38,10 @@ public class CarryItem : Grabbable
         Body.isKinematic = true;
         SetCollidersEnabled(false);
         transform.SetParent(player.HoldPoint);
-        transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+        transform.SetLocalPositionAndRotation(holdOffset, Quaternion.identity);
         player.SetHeld(this);
+        if (!string.IsNullOrEmpty(promptText))
+            PhotoHUD.ShowPrompt(promptTitle, promptText, promptSeconds);
         return true;
     }
 
