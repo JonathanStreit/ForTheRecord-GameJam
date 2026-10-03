@@ -33,7 +33,7 @@ public static class PhotoPrototypeSceneBuilder
         var playerPrefab = BuildPlayerPrefab();
         BuildPlayerManager(playerPrefab);
         var capture = BuildBigCamera(new Vector3(0f, 1.4f, -8f));
-        BuildFlash(new Vector3(-5f, 0.5f, -9f));
+        BuildFlash(new Vector3(-5f, 1f, -9f));
         BuildRemote(new Vector3(5f, 0f, -9f), capture);
 
         var stone = Mat("Stone", new Color(0.8f, 0.8f, 0.78f));
@@ -264,30 +264,26 @@ public static class PhotoPrototypeSceneBuilder
         flash.transform.position = position;
         var t = flash.transform;
         var black = Mat("CameraBlack", new Color(0.08f, 0.08f, 0.08f));
-        var silver = Mat("Silver", new Color(0.85f, 0.85f, 0.9f));
-        silver.SetFloat("_Metallic", 0.9f);
-        silver.SetFloat("_Smoothness", 0.8f);
-        var glass = Mat("BulbGlass", new Color(0.97f, 0.97f, 0.9f));
-        glass.SetFloat("_Smoothness", 0.95f);
+        var white = Mat("SoftboxWhite", Color.white);
 
-        // Old press flash: long silver battery tube, black collar, a big reflector dish behind
-        // and an upright light bulb sitting in the collar in front of the dish.
-        // Root is at the middle of the tube, where the player holds it.
-        Visual(PrimitiveType.Cylinder, "Battery Tube", t, new Vector3(0f, 0f, 0f), new Vector3(0.26f, 0.5f, 0.26f), silver);
-        Visual(PrimitiveType.Cylinder, "Tube Cap", t, new Vector3(0f, -0.48f, 0f), new Vector3(0.3f, 0.03f, 0.3f), black);
-        Visual(PrimitiveType.Cylinder, "Tube Band", t, new Vector3(0f, -0.1f, 0f), new Vector3(0.29f, 0.04f, 0.29f), black);
-        Visual(PrimitiveType.Cylinder, "Collar", t, new Vector3(0f, 0.58f, 0f), new Vector3(0.34f, 0.09f, 0.34f), black);
-        Visual(PrimitiveType.Sphere, "Reflector Bowl", t, new Vector3(0f, 1.15f, -0.32f), new Vector3(1.5f, 1.5f, 0.45f), silver);
-        Visual(PrimitiveType.Cylinder, "Reflector Rim", t, new Vector3(0f, 1.15f, -0.27f), new Vector3(1.58f, 0.02f, 1.58f), black, new Vector3(90f, 0f, 0f));
-        Visual(PrimitiveType.Cylinder, "Reflector Face", t, new Vector3(0f, 1.15f, -0.24f), new Vector3(1.45f, 0.02f, 1.45f), silver, new Vector3(90f, 0f, 0f));
-        Visual(PrimitiveType.Cylinder, "Bulb Socket", t, new Vector3(0f, 0.72f, 0f), new Vector3(0.2f, 0.06f, 0.2f), silver);
-        Visual(PrimitiveType.Cylinder, "Bulb Neck", t, new Vector3(0f, 0.88f, 0f), new Vector3(0.22f, 0.12f, 0.22f), glass);
-        Visual(PrimitiveType.Sphere, "Bulb", t, new Vector3(0f, 1.15f, 0f), Vector3.one * 0.52f, glass);
-        var box = flash.AddComponent<BoxCollider>();
-        box.center = new Vector3(0f, 0.7f, -0.12f);
-        box.size = new Vector3(1.5f, 2.4f, 0.7f);
+        // Studio softbox: tripod stand, thin pole and a black box with a big white front panel.
+        // Root is at the middle of the pole (1 m above the feet), where the player holds it.
+        Visual(PrimitiveType.Cylinder, "Leg Front", t, new Vector3(0f, -0.7f, 0.25f), new Vector3(0.05f, 0.4f, 0.05f), black, new Vector3(-40f, 0f, 0f));
+        Visual(PrimitiveType.Cylinder, "Leg Back Right", t, new Vector3(0.217f, -0.7f, -0.125f), new Vector3(0.05f, 0.4f, 0.05f), black, new Vector3(-40f, 120f, 0f));
+        Visual(PrimitiveType.Cylinder, "Leg Back Left", t, new Vector3(-0.217f, -0.7f, -0.125f), new Vector3(0.05f, 0.4f, 0.05f), black, new Vector3(-40f, 240f, 0f));
+        Visual(PrimitiveType.Cylinder, "Pole", t, new Vector3(0f, 0.2f, 0f), new Vector3(0.06f, 0.65f, 0.06f), black);
+        Visual(PrimitiveType.Cylinder, "Pole Clamp", t, new Vector3(0f, 0f, 0f), new Vector3(0.1f, 0.05f, 0.1f), black);
+        Visual(PrimitiveType.Cube, "Lamp Mount", t, new Vector3(0f, 1.1f, -0.15f), new Vector3(0.35f, 0.35f, 0.3f), black);
+        Visual(PrimitiveType.Cube, "Softbox", t, new Vector3(0f, 1.1f, 0.15f), new Vector3(0.95f, 1.3f, 0.4f), black);
+        Visual(PrimitiveType.Cube, "Diffuser", t, new Vector3(0f, 1.1f, 0.36f), new Vector3(0.88f, 1.23f, 0.04f), white);
+        var softboxCollider = flash.AddComponent<BoxCollider>();
+        softboxCollider.center = new Vector3(0f, 1.1f, 0.1f);
+        softboxCollider.size = new Vector3(0.95f, 1.3f, 0.6f);
+        var standCollider = flash.AddComponent<BoxCollider>();
+        standCollider.center = new Vector3(0f, -0.4f, 0f);
+        standCollider.size = new Vector3(1f, 1.2f, 1f);
 
-        var light = Empty("Light", t, new Vector3(0f, 1.15f, 0.3f)).gameObject.AddComponent<Light>();
+        var light = Empty("Light", t, new Vector3(0f, 1.1f, 0.45f)).gameObject.AddComponent<Light>();
         light.type = LightType.Spot;
         light.intensity = 60f;
         light.enabled = false;
